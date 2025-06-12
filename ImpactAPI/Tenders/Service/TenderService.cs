@@ -1,39 +1,21 @@
-﻿using System.Globalization;
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using ImpactAPI.Tenders.Database;
-using ImpactAPI.Tenders.External;
 using Infrastructure.Extensions;
 using Infrastructure.Querying;
 using Microsoft.EntityFrameworkCore;
 
 namespace ImpactAPI.Tenders.Service;
 
-public class TenderService(TendersDbContext Database, TenderDownloaderHostedService DownloaderService)
+public class TenderService(TendersDbContext Database)
 {
-    public TimeSpan TimeLeftToLoadAllTenders => DownloaderService.TimeLeft;
-
     public async Task<QueryResponse<TenderReadModel>> GetTenders(TenderQueryParameters queryParams, CancellationToken cancellationToken)
     {
+        var page = Math.Max(queryParams.Page ?? 1, 1);
+
         // The maximum page size is 100 - default to 100 when not provided
         var pageSize = Math.Min(queryParams.PageSize ?? 100, 100);
 
-        Expression<Func<Tender, bool>> cursorCondition = queryParams.SortField switch
-        {
-            TenderSortField.Date => DateTime.TryParse(queryParams.PageAfter, CultureInfo.InvariantCulture, out var afterDate)
-                ? (t) => t.Date > afterDate
-                : (t) => false,
-            TenderSortField.AwardedValueInEuro => decimal.TryParse(queryParams.PageAfter ?? string.Empty, CultureInfo.InvariantCulture, out var afterDecimal)
-                ? (t) => t.AwardedValueInEuro > afterDecimal
-                : (t) => false,
-            _ => (t) => t.Id.CompareTo(queryParams.PageAfter!) > 0
-        };
-
-        Func<TenderReadModel, string> nextCursorGetter = queryParams.SortField switch
-        {
-            TenderSortField.Date => (t) => t.Date.ToString(),
-            TenderSortField.AwardedValueInEuro => (t) => t.AwardedValueInEuro.ToString(),
-            _ => (t) => t.Id
-        };
+        var sortDescending = queryParams.SortDescending ?? false;
 
         Expression<Func<Tender, object>> sortField = queryParams.SortField switch
         {
@@ -43,23 +25,23 @@ public class TenderService(TendersDbContext Database, TenderDownloaderHostedServ
         };
 
         var tendersQuery = Database.Tenders
-            .OrderedBy(sortField, queryParams.SortDescending ?? false)
+            .OrderedBy(sortField, sortDescending)
             .WhereIf(queryParams.SupplierId is not null, t => t.Suppliers.Any(s => s.Id == queryParams.SupplierId))
             .WhereIf(queryParams.DateFrom is not null, t => t.Date >= queryParams.DateFrom)
             .WhereIf(queryParams.DateTo is not null, t => t.Date <= queryParams.DateTo)
             .WhereIf(queryParams.AwardedValueInEuroFrom is not null, t => t.AwardedValueInEuro >= queryParams.AwardedValueInEuroFrom)
             .WhereIf(queryParams.AwardedValueInEuroTo is not null, t => t.AwardedValueInEuro <= queryParams.AwardedValueInEuroTo)
-            .WhereIf(queryParams.PageAfter is not null, cursorCondition)
             .Select(TenderReadModel.MapFromTender);
 
         var tendersTotal = await tendersQuery.CountAsync(cancellationToken);
         var tenders = await tendersQuery
+            .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
         return new QueryResponse<TenderReadModel>(
             tenders,
-            nextCursorGetter(tenders.Last()),
+            page,
             pageSize,
             tendersTotal
         );

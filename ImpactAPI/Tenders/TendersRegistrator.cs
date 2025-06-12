@@ -33,11 +33,12 @@ public class TendersRegistrator : ISliceRegistrator
             ]);
         }
 
-        builder.Services.AddDbContext<TendersDbContext>(options => options
+        builder.Services.AddDbContextFactory<TendersDbContext>(options => options
             .UseSqlServer(configuration.GetValue<string>("ConnectionString"))
         );
 
         builder.Services.AddSingleton<TenderDownloaderHostedService>();
+        builder.Services.AddSingleton<ITenderDownloaderService, TenderDownloaderHostedService>(sp => sp.GetRequiredService<TenderDownloaderHostedService>());
         builder.Services.AddHostedService(sp => sp.GetRequiredService<TenderDownloaderHostedService>());
 
         builder.Services.AddScoped<TenderService>();

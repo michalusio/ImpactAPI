@@ -18,6 +18,8 @@ public class Program
 
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
+        builder.Services.AddResponseCaching();
+        builder.Services.AddOutputCache();
 
         foreach (var registrator in registrators)
         {
@@ -33,9 +35,9 @@ public class Program
         }
 
         app.UseHttpsRedirection();
-
         app.UseAuthorization();
-
+        app.UseResponseCaching();
+        app.UseOutputCache();
         app.UseMiddleware<NotFoundExceptionMiddleware>();
 
         foreach (var registrator in registrators)
@@ -44,7 +46,6 @@ public class Program
         }
 
         app.MapControllers();
-
         app.Run();
     }
 }

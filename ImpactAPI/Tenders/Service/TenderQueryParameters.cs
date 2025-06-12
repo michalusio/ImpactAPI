@@ -3,7 +3,7 @@
 namespace ImpactAPI.Tenders.Service;
 
 public record TenderQueryParameters(
-    string? PageAfter,
+    int? Page,
     int? PageSize,
     DateTime? DateFrom,
     DateTime? DateTo,
@@ -12,7 +12,7 @@ public record TenderQueryParameters(
     decimal? AwardedValueInEuroTo,
     TenderSortField? SortField,
     bool? SortDescending
-) : QueryRequest(PageAfter, PageSize);
+) : PageRequest(Page, PageSize);
 
 public enum TenderSortField
 {

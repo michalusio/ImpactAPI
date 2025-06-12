@@ -1,4 +1,4 @@
-﻿using ImpactAPI.Tenders.Service;
+﻿using ImpactAPI.Tenders.External;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -9,7 +9,7 @@ public class UnavailableBeforeTendersLoadAttribute : Attribute
 {
 }
 
-public class UnavailableBeforeTendersLoadActionFilter(TenderService Service) : IActionFilter
+public class UnavailableBeforeTendersLoadActionFilter(ITenderDownloaderService DownloaderService) : IActionFilter
 {
     public void OnActionExecuted(ActionExecutedContext context)
     {
@@ -19,7 +19,7 @@ public class UnavailableBeforeTendersLoadActionFilter(TenderService Service) : I
 
         if (hasAttribute)
         {
-            var timeLeft = Service.TimeLeftToLoadAllTenders;
+            var timeLeft = DownloaderService.TimeLeft;
             if (timeLeft.Ticks > 0)
             {
                 context.Result = new ContentResult

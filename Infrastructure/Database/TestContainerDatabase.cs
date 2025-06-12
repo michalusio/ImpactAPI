@@ -4,12 +4,18 @@ using Testcontainers.MsSql;
 
 namespace Infrastructure.Database;
 
-public class TestContainerDatabase(string serviceName) : IHostedService, IAsyncDisposable
+public class TestContainerDatabase(string serviceName, bool withVolumeMount = true) : IHostedService, IAsyncDisposable
 {
-    private readonly MsSqlContainer _database = new MsSqlBuilder()
-        .WithImage("mcr.microsoft.com/mssql/server:2022-CU10-ubuntu-22.04")
-        .WithVolumeMount(serviceName + "DbVolume", "/var/opt/mssql")
-        .Build();
+    private readonly MsSqlContainer _database = new Lazy<MsSqlContainer>(() =>
+    {
+        var builder = new MsSqlBuilder()
+            .WithImage("mcr.microsoft.com/mssql/server:2022-CU10-ubuntu-22.04");
+        if (withVolumeMount)
+        {
+            builder = builder.WithVolumeMount(serviceName + "DbVolume", "/var/opt/mssql");
+        }
+        return builder.Build();
+    }).Value;
 
     public string ServiceName => serviceName;
     public string ConnectionString => _database.GetConnectionString();

@@ -1,6 +1,6 @@
 ﻿namespace Infrastructure.Querying;
 
-public record QueryRequest(
-    string? PageAfter,
+public record PageRequest(
+    int? Page,
     int? PageSize
 );

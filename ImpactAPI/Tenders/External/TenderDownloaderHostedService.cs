@@ -5,15 +5,21 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ImpactAPI.Tenders.External;
 
-public class TenderDownloaderHostedService(
-    IServiceProvider ServiceProvider,
-    ITendersGuruAPI TendersGuruApi,
-    ILogger<TenderDownloaderHostedService> Logger
-) : IHostedService, IDisposable
+public interface ITenderDownloaderService
 {
     /// <summary>
     /// Estimated time left to load all tenders (Zero if finished)
     /// </summary>
+    public TimeSpan TimeLeft { get; }
+}
+
+public class TenderDownloaderHostedService(
+    IDbContextFactory<TendersDbContext> DatabaseFactory,
+    ITendersGuruAPI TendersGuruApi,
+    ILogger<TenderDownloaderHostedService> Logger
+) : ITenderDownloaderService, IHostedService, IDisposable
+{
+    /// <inheritdoc/>
     public TimeSpan TimeLeft { get; private set; } = TimeSpan.MaxValue;
 
     private readonly CancellationTokenSource _cancellationTokenSource = new();
@@ -25,8 +31,7 @@ public class TenderDownloaderHostedService(
         {
             try
             {
-                using var scope = ServiceProvider.CreateAsyncScope();
-                var db = scope.ServiceProvider.GetRequiredService<TendersDbContext>();
+                using var db = await DatabaseFactory.CreateDbContextAsync(cancellationToken);
                 await Process(db, _cancellationTokenSource.Token);
             }
             catch (TaskCanceledException)
@@ -69,7 +74,7 @@ public class TenderDownloaderHostedService(
             RecalculateTimeLeft(alreadyLoadedCount, loadedSoFar, timeTakenWatch.Elapsed, totalTendersWanted);
             Logger.LogDebug("Loaded {TendersTotal} tenders total. Estimated time left: {TimeLeft}", alreadyLoadedCount + loadedSoFar, TimeLeft);
         }
-
+        RecalculateTimeLeft(alreadyLoadedCount, loadedSoFar, timeTakenWatch.Elapsed, totalTendersWanted);
         Logger.LogInformation("Downloaded all {Tenders} tenders", alreadyLoadedCount + loadedSoFar);
     }
 
@@ -84,7 +89,7 @@ public class TenderDownloaderHostedService(
 
     private static async Task SaveToDatabase(TendersDbContext database, IEnumerable<ITendersGuruAPI.TenderDto> tenders, CancellationToken cancellationToken)
     {
-        var suppliersToAdd = tenders
+        var receivedSuppliers = tenders
             .SelectMany(t => t.Awards)
             .SelectMany(a => a.Suppliers)
             .DistinctBy(s => s.Id)
@@ -95,13 +100,13 @@ public class TenderDownloaderHostedService(
             })
             .ToDictionary(s => s.Id);
 
-        var supplierIds = suppliersToAdd.Keys;
+        var supplierIds = receivedSuppliers.Keys;
 
         var existingSuppliers = await database.Suppliers
             .Where(s => supplierIds.Contains(s.Id))
             .ToDictionaryAsync(s => s.Id, cancellationToken);
 
-        database.Suppliers.AddRange(suppliersToAdd.Values.Where(s => !existingSuppliers.ContainsKey(s.Id)));
+        database.Suppliers.AddRange(receivedSuppliers.Values.Where(s => !existingSuppliers.ContainsKey(s.Id)));
 
         var tendersToAdd = tenders
             .Select(t => new Tender
@@ -116,7 +121,7 @@ public class TenderDownloaderHostedService(
                     .DistinctBy(s => s.Id)
                     .Select(s => existingSuppliers.TryGetValue(s.Id, out var supplier)
                         ? supplier
-                        : suppliersToAdd[s.Id])
+                        : receivedSuppliers[s.Id])
                     .ToList()
             })
             .ToList();
